@@ -1,0 +1,56 @@
+---
+title: "EV Adoption, Electricity Prices, and Renewable Energy Trends"
+author: "Ella Proctor"
+date: "`r Sys.Date()`"
+format:
+  pdf:
+    code-fold: false
+    code-tools: true
+    include-in-header: false
+execute:
+  echo: true
+  warning: false
+  message: false
+---
+
+## **Part 5: Final Deliverable**
+
+## **Part 5: Final Deliverable**
+
+## 1. Introduction
+
+This report explores how electric-vehicle (EV) adoption interacts with the electricity prices and renewable-energy use in different states. My guiding question is whether coastal states show stronger growth in EV adoption compared to inland regions.
+
+## 2. Data and Maps
+
+This analysis used three different datasets: EV Registrations (by state), Renewable Energy Use (energy consumption by source) and Total Energy Use (by state). Data cleaning inluded removing units and symbols, computing each state's renewable energy share, classifying regions into inland and different coasts, etc.
+
+```{r}
+head(combined_2021)
+head(evs)
+
+ggplot(map_ev, aes(long, lat, group = group, fill = ev_registrations)) +
+  geom_polygon(color = "white", linewidth = 0.2) +
+  scale_fill_viridis_c(option = "plasma", trans = "log10",
+                       name = "EV Registrations (log scale)") +
+  labs(title = "Electric Vehicle Registrations by State (2023)",
+       caption = "Data: EV Power - stat 133") +
+  theme_map() +
+  theme(legend.position = "bottom",
+        plot.title = element_text(face = "bold", size = 14))
+
+ggplot(combined_2021, aes(x = renewable_share_2021, y = ev_registrations, color = region)) +
+  geom_point(size = 3, alpha = 0.8) +
+  scale_y_log10(labels = scales::comma) +
+  scale_color_manual(values = c("blue", "green", "orange")) +
+  labs(title = "EV Adoption vs Renewable Energy Share (2021–2023)",
+       subtitle = "Comparing West Coast, East Coast, and Inland States",
+       x = "Renewable Energy Share (%)",
+       y = "EV Registrations (log scale)",
+       color = "Region") +
+  theme_minimal(base_size = 13)
+```
+
+## 3. Analysis
+
+The maps and scatterplot revels several trends, but the most important one to answer my question is that we can see high EV adoption clusters on the West Coast. Inland states tend to have lower EV registrations even when renewable-energy share is high (Iowa, South Dakota), suggesting that charging-network access and income levels influence adoption more. We can also see a positive correlation between renewable-energy share and EV registrations, which implies that states investing in clean energy infrastructure also foster consumer adoption of EVs. In terms of pricing, west coast states like California and Washington had high renewable-energy shares and high electricity prices which shows a correlation (people switch to renewables when electricity prices are high). Of course, with all of this data we cannot just assume causation without further digging, because there may be some confounding factors like cultures in different areas that affect these results.
