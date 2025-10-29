@@ -2,33 +2,260 @@
 title: "EV Power - Lab 4 Project Report"
 format: typst
 ---
+options(repos = c(CRAN = "https://cloud.r-project.org"))
 
 # Example Solution 1
 
 ## **Part 0: libraries**
 
 ```{r}
-
+setwd("~/Documents/stat133/ev-power-ellaproctor")
+install.packages("ggthemes")
+install.packages("maps")
+install.packages("sf")
+library(tidyverse)
+library(readr)
+library(dplyr)
+library(tidyr)
+library(stringr)
+library(ggthemes)
+library(maps)
+library(sf)
 ```
 
 ## **Part 1:** **Defining Research Question**
 
-Chosen Question:
+Chosen Question: Are there more EV registrations in states with higher average electricity prices?
+
+Some other questions: Do states with more volatile energy prices invest more in renewable sources over time? Do coastal states tend to have more EV registration and renewable energy adoption? Has EV adoption or renewable energy use grown faster?
 
 ## **Part 2: Data Preparation and Cleaning**
 
 ```{r}
+setwd("~/Documents/stat133/ev-power-ellaproctor/data")
+renew21 <- read_csv("renew-use-2021.csv")
+renew22 <- read_csv("renew-use-2022.csv")
+renew23 <- read_csv("renew-use-2023.csv")
+total21 <- read_csv("total-use-2021.csv")
+total22 <- read_csv("total-use-2022.csv")
+total23 <- read_csv("total-use-2023.csv")
+evs <- read_csv("ev-registrations-by-state-2023.csv", skip = 1, show_col_types = FALSE)
+price <- read_csv("av-energy-price-2021-2023.csv")
 
+clean_names <- function(df) {
+  names(df) <- names(df) %>%
+    str_to_lower() %>%
+    str_replace_all("[^a-z0-9]+", "_") %>%
+    str_replace_all("_$", "")
+  return(df)
+}
+
+renew21 <- clean_names(renew21)
+renew22 <- clean_names(renew22)
+renew23 <- clean_names(renew23)
+total21 <- clean_names(total21)
+total22 <- clean_names(total22)
+total23 <- clean_names(total23)
+evs <- clean_names(evs)
+price <- clean_names(price)
+
+names(renew21)
+names(evs)
+
+standardize_states <- function(df) {
+  if ("state" %in% names(df)) {
+    df <- df %>%
+      mutate(
+        state = str_to_title(state),
+        state = str_trim(state)
+      )
+  }
+  return(df)
+}
+
+renew21 <- standardize_states(renew21)
+renew22 <- standardize_states(renew22)
+renew23 <- standardize_states(renew23)
+total21 <- standardize_states(total21)
+total22 <- standardize_states(total22)
+total23 <- standardize_states(total23)
+evs <- standardize_states(evs)
+price <- standardize_states(price)
+
+renew21 <- renew21 %>% mutate(year = 2021)
+renew22 <- renew22 %>% mutate(year = 2022)
+renew23 <- renew23 %>% mutate(year = 2023)
+total21 <- total21 %>% mutate(year = 2021)
+total22 <- total22 %>% mutate(year = 2022)
+total23 <- total23 %>% mutate(year = 2023)
+
+colnames(evs) <- c("state", "ev_registrations_raw")
+evs <- evs %>%
+  mutate(
+    state = str_to_title(state),
+    ev_registrations = str_replace_all(ev_registrations_raw, "[^0-9]", ""),
+    ev_registrations = as.numeric(ev_registrations)
+  ) %>%
+  select(state, ev_registrations)
+
+# checks state names match across datasets
+setdiff(unique(renew21$state), unique(evs$state))
 ```
 
 ## **Part 3: Joining / Pivoting Datasets for Analysis**
 
 ```{r}
+setwd("~/Documents/stat133/ev-power-ellaproctor/data")
 
+evs <- read_csv("ev-registrations-by-state-2023.csv", skip = 1)
+
+colnames(evs) <- c("state", "ev_registrations_raw")
+
+evs <- evs %>%
+  mutate(
+    state = str_to_title(state),
+    ev_registrations = str_replace_all(ev_registrations_raw, "[^0-9]", ""),
+    ev_registrations = as.numeric(ev_registrations)
+  ) %>%
+  select(state, ev_registrations)
+
+head(evs)
+
+renew21 <- renew21 %>%
+  mutate(
+    state = str_to_upper(state),
+    renewable_use_2021 = str_replace_all(renewable_use_2021, "[^0-9.]", ""),
+    renewable_use_2021 = as.numeric(renewable_use_2021)
+  )
+
+total21_long <- total21 %>%
+  pivot_longer(
+    cols = -energy_source,
+    names_to = "state",
+    values_to = "total_use_2021"
+  ) %>%
+  mutate(
+    state = str_to_upper(state),
+    total_use_2021 = as.numeric(total_use_2021)
+  )
+
+renew_state_2021 <- renew21 %>%
+  group_by(state) %>%
+  summarise(total_renewable_2021 = sum(renewable_use_2021, na.rm = TRUE))
+
+total_2021_summary <- total21_long %>%
+  filter(str_detect(energy_source, regex("total_renewable_energy", ignore_case = TRUE))) %>%
+  select(state, total_use_2021)
+
+combined_2021 <- left_join(total_2021_summary, renew_state_2021, by = "state") %>%
+  mutate(renewable_share_2021 = (total_renewable_2021 / total_use_2021) * 100)
+
+combined_2021 <- combined_2021 %>%
+  mutate(state = state.name[match(state, state.abb)]) %>%
+  filter(!is.na(state)) %>%
+  left_join(evs, by = "state") %>%
+  mutate(
+    region = case_when(
+      state %in% c("California", "Oregon", "Washington") ~ "West Coast",
+      state %in% c("New York", "Massachusetts", "Maine",
+                   "New Jersey", "Maryland", "Virginia",
+                   "Florida", "Georgia") ~ "East Coast",
+      TRUE ~ "Inland"
+    )
+  )
+
+glimpse(combined_2021)
 ```
 
 ## **Part 4: Mapping Visualization**
 
 ```{r}
+# EV registrations by state
 
+states_map <- map_data("state")
+combined_2021$state <- tolower(combined_2021$state)
+map_ev <- left_join(states_map, combined_2021, by = c("region" = "state"))
+
+ggplot(map_ev, aes(long, lat, group = group, fill = ev_registrations)) +
+  geom_polygon(color = "white", linewidth = 0.2) +
+  scale_fill_viridis_c(option = "plasma", trans = "log10",
+                       name = "EV Registrations (log scale)") +
+  labs(title = "Electric Vehicle Registrations by State (2023)",
+       caption = "Data: EV Power - stat 133") +
+  theme_map() +
+  theme(legend.position = "bottom",
+        plot.title = element_text(face = "bold", size = 14))
+
+# renewable energy share in 2021
+map_renew <- left_join(states_map, combined_2021, by = c("region" = "state"))
+
+ggplot(map_renew, aes(long, lat, group = group, fill = renewable_share_2021)) +
+  geom_polygon(color = "white", linewidth = 0.2) +
+  scale_fill_gradient(low = "orange", high = "green",
+                      name = "% Renewable Energy (2021)") +
+  labs(title = "Renewable Energy Share by State (2021)",
+       caption = "Data: EV Power - stat 133") +
+  theme_map() +
+  theme(legend.position = "bottom",
+        plot.title = element_text(face = "bold", size = 14))
+
+#coast vs inland 
+ggplot(combined_2021, aes(x = renewable_share_2021, y = ev_registrations, color = region)) +
+  geom_point(size = 3, alpha = 0.8) +
+  scale_y_log10(labels = scales::comma) +
+  scale_color_manual(values = c("blue", "green", "orange")) +
+  labs(title = "EV Adoption vs Renewable Energy Share (2021–2023)",
+       subtitle = "Comparing West Coast, East Coast, and Inland States",
+       x = "Renewable Energy Share (%)",
+       y = "EV Registrations (log scale)",
+       color = "Region") +
+  theme_minimal(base_size = 13)
 ```
+
+## **Part 5: Final Deliverable**
+
+---
+title: "EV Adoption, Electricity Prices, and Renewable Energy Trends"
+author: "Ella Proctor"
+date: "`r Sys.Date()`"
+format: pdf
+---
+
+## 1. Introduction
+
+This report explores how electric-vehicle (EV) adoption interacts with the electricity prices and renewable-energy use in different states. My guiding question is whether coastal states show stronger growth in EV adoption compared to inland regions.
+
+## 2. Data and Maps
+
+This analysis used three different datasets: EV Registrations (by state), Renewable Energy Use (energy consumption by source) and Total Energy Use (by state). Data cleaning inluded removing units and symbols, computing each state's renewable energy share, classifying regions into inland and different coasts, etc.
+
+```{r}
+head(combined_2021)
+head(evs)
+
+ggplot(map_ev, aes(long, lat, group = group, fill = ev_registrations)) +
+  geom_polygon(color = "white", linewidth = 0.2) +
+  scale_fill_viridis_c(option = "plasma", trans = "log10",
+                       name = "EV Registrations (log scale)") +
+  labs(title = "Electric Vehicle Registrations by State (2023)",
+       caption = "Data: EV Power - stat 133") +
+  theme_map() +
+  theme(legend.position = "bottom",
+        plot.title = element_text(face = "bold", size = 14))
+
+ggplot(combined_2021, aes(x = renewable_share_2021, y = ev_registrations, color = region)) +
+  geom_point(size = 3, alpha = 0.8) +
+  scale_y_log10(labels = scales::comma) +
+  scale_color_manual(values = c("blue", "green", "orange")) +
+  labs(title = "EV Adoption vs Renewable Energy Share (2021–2023)",
+       subtitle = "Comparing West Coast, East Coast, and Inland States",
+       x = "Renewable Energy Share (%)",
+       y = "EV Registrations (log scale)",
+       color = "Region") +
+  theme_minimal(base_size = 13)
+```
+
+## 3. Analysis
+
+The maps and scatterplot revels several trends, but the most important one to answer my question is that we can see high EV adoption clusters on the West Coast. Inland states tend to have lower EV registrations even when renewable-energy share is high (Iowa, South Dakota), suggesting that charging-network access and income levels influence adoption more. We can also see a positive correlation between renewable-energy share and EV registrations, which implies that states investing in clean energy infrastructure also foster consumer adoption of EVs. In terms of pricing, west coast states like California and Washington had high renewable-energy shares and high electricity prices which shows a correlation (people switch to renewables when electricity prices are high). Of course, with all of this data we cannot just assume causation without further digging, because there may be some confounding factors like cultures in different areas that affect these results.
+---
